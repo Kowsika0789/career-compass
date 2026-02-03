@@ -1,29 +1,62 @@
-import { useState } from "react";
-import { Briefcase, MapPin, DollarSign, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, ArrowRight } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Briefcase, MapPin, IndianRupee, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
-import { jobRoles } from "@/data/dummyData";
+import { calculateJobMatches, Skill, JobRole } from "@/data/dummyData";
 import { Link } from "react-router-dom";
 
 const JobMatching = () => {
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
-  const sortedJobs = [...jobRoles].sort((a, b) => b.matchPercentage - a.matchPercentage);
+  const [matchedJobs, setMatchedJobs] = useState<JobRole[]>([]);
+
+  useEffect(() => {
+    // Get skills from sessionStorage or use defaults
+    const storedSkills = sessionStorage.getItem("userSkills");
+    let userSkills: Skill[] = [];
+    
+    if (storedSkills) {
+      try {
+        userSkills = JSON.parse(storedSkills);
+      } catch {
+        userSkills = [];
+      }
+    }
+    
+    // If no skills, use some defaults for demo
+    if (userSkills.length === 0) {
+      userSkills = [
+        { name: "Python", level: "intermediate", category: "Programming" },
+        { name: "JavaScript", level: "intermediate", category: "Programming" },
+        { name: "SQL", level: "intermediate", category: "Database" },
+        { name: "React", level: "intermediate", category: "Frontend" },
+      ];
+    }
+    
+    const jobs = calculateJobMatches(userSkills);
+    setMatchedJobs(jobs);
+  }, []);
+
+  const stats = useMemo(() => {
+    const highMatch = matchedJobs.filter(j => j.matchPercentage >= 70).length;
+    const goodMatch = matchedJobs.filter(j => j.matchPercentage >= 50).length;
+    return { highMatch, goodMatch, total: matchedJobs.length };
+  }, [matchedJobs]);
 
   const getMatchColor = (percentage: number) => {
-    if (percentage >= 85) return "text-success";
-    if (percentage >= 70) return "text-primary";
-    if (percentage >= 50) return "text-warning";
+    if (percentage >= 70) return "text-success";
+    if (percentage >= 50) return "text-primary";
+    if (percentage >= 30) return "text-warning";
     return "text-muted-foreground";
   };
 
   const getMatchBg = (percentage: number) => {
-    if (percentage >= 85) return "bg-success";
-    if (percentage >= 70) return "bg-primary";
-    if (percentage >= 50) return "bg-warning";
+    if (percentage >= 70) return "bg-success";
+    if (percentage >= 50) return "bg-primary";
+    if (percentage >= 30) return "bg-warning";
     return "bg-muted";
   };
 
@@ -37,7 +70,7 @@ const JobMatching = () => {
             Job Role Matching
           </h1>
           <p className="mt-3 text-lg text-muted-foreground">
-            Based on your skills, here are the roles that best match your profile.
+            Based on your skills, here are the roles that best match your profile across India.
           </p>
         </div>
 
@@ -50,7 +83,7 @@ const JobMatching = () => {
               </div>
               <div>
                 <p className="text-sm text-white/80">Total Matches</p>
-                <p className="font-display text-2xl font-bold">{sortedJobs.length}</p>
+                <p className="font-display text-2xl font-bold">{stats.total}</p>
               </div>
             </CardContent>
           </Card>
@@ -60,9 +93,9 @@ const JobMatching = () => {
                 <CheckCircle className="h-6 w-6 text-success" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">High Match (85%+)</p>
+                <p className="text-sm text-muted-foreground">High Match (70%+)</p>
                 <p className="font-display text-2xl font-bold text-foreground">
-                  {sortedJobs.filter(j => j.matchPercentage >= 85).length}
+                  {stats.highMatch}
                 </p>
               </div>
             </CardContent>
@@ -70,11 +103,11 @@ const JobMatching = () => {
           <Card className="border-none shadow-lg">
             <CardContent className="flex items-center gap-4 p-6">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                <DollarSign className="h-6 w-6 text-primary" />
+                <IndianRupee className="h-6 w-6 text-primary" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Avg Salary Range</p>
-                <p className="font-display text-2xl font-bold text-foreground">$70-120k</p>
+                <p className="font-display text-2xl font-bold text-foreground">₹8-20 LPA</p>
               </div>
             </CardContent>
           </Card>
@@ -82,7 +115,7 @@ const JobMatching = () => {
 
         {/* Job Cards */}
         <div className="space-y-4">
-          {sortedJobs.map((job) => (
+          {matchedJobs.map((job) => (
             <Card 
               key={job.id} 
               className="group border-none shadow-md transition-all duration-300 hover:shadow-xl"
@@ -114,7 +147,7 @@ const JobMatching = () => {
                         {job.location}
                       </span>
                       <span className="flex items-center gap-1">
-                        <DollarSign className="h-4 w-4" />
+                        <IndianRupee className="h-4 w-4" />
                         {job.salary}
                       </span>
                       <span className="flex items-center gap-1">
@@ -194,11 +227,15 @@ const JobMatching = () => {
                         Matched Skills ({job.matchedSkills.length})
                       </h4>
                       <div className="flex flex-wrap gap-2">
-                        {job.matchedSkills.map((skill) => (
-                          <Badge key={skill} className="bg-success/10 text-success border-success/20">
-                            {skill}
-                          </Badge>
-                        ))}
+                        {job.matchedSkills.length > 0 ? (
+                          job.matchedSkills.map((skill) => (
+                            <Badge key={skill} className="bg-success/10 text-success border-success/20">
+                              {skill}
+                            </Badge>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No matching skills yet</p>
+                        )}
                       </div>
                     </div>
 
@@ -206,7 +243,7 @@ const JobMatching = () => {
                     <div>
                       <h4 className="mb-3 flex items-center gap-2 font-medium text-foreground">
                         <XCircle className="h-5 w-5 text-destructive" />
-                        Missing Skills ({job.missingSkills.length})
+                        Skills to Learn ({job.missingSkills.length})
                       </h4>
                       <div className="flex flex-wrap gap-2">
                         {job.missingSkills.map((skill) => (
@@ -215,12 +252,14 @@ const JobMatching = () => {
                           </Badge>
                         ))}
                       </div>
-                      <Link to="/roadmap" className="mt-4 inline-block">
-                        <Button variant="outline" size="sm" className="gap-2">
-                          Learn Missing Skills
-                          <ArrowRight className="h-4 w-4" />
-                        </Button>
-                      </Link>
+                      {job.missingSkills.length > 0 && (
+                        <Link to="/roadmap" className="mt-4 inline-block">
+                          <Button variant="outline" size="sm" className="gap-2">
+                            Learn Missing Skills
+                            <ArrowRight className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                      )}
                     </div>
                   </div>
                 )}
