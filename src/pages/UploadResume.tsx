@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Upload, FileText, Plus, X, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,10 +8,27 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Skill, extractSkillsFromText, skillKeywords } from "@/data/dummyData";
 import { useNavigate } from "react-router-dom";
-import * as pdfjsLib from "pdfjs-dist";
 
-// Set the worker source for PDF.js
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Dynamically load PDF.js from CDN
+const loadPdfJs = (): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    // Check if already loaded
+    if ((window as any).pdfjsLib) {
+      resolve((window as any).pdfjsLib);
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    script.onload = () => {
+      const pdfjsLib = (window as any).pdfjsLib;
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      resolve(pdfjsLib);
+    };
+    script.onerror = () => reject(new Error("Failed to load PDF.js"));
+    document.head.appendChild(script);
+  });
+};
 
 const UploadResume = () => {
   const navigate = useNavigate();
@@ -21,6 +38,12 @@ const UploadResume = () => {
   const [newSkill, setNewSkill] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [resumeText, setResumeText] = useState("");
+  const [pdfJsLoaded, setPdfJsLoaded] = useState(false);
+
+  // Preload PDF.js when component mounts
+  useEffect(() => {
+    loadPdfJs().then(() => setPdfJsLoaded(true)).catch(console.error);
+  }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -41,6 +64,7 @@ const UploadResume = () => {
   }, []);
 
   const extractTextFromPDF = async (file: File): Promise<string> => {
+    const pdfjsLib = await loadPdfJs();
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     
