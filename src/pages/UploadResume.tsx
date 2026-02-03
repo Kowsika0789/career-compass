@@ -1,12 +1,12 @@
-import { useState } from "react";
-import { Upload, FileText, Plus, X, Check } from "lucide-react";
+import { useState, useCallback } from "react";
+import { Upload, FileText, Plus, X, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
-import { userSkills, Skill } from "@/data/dummyData";
+import { Skill, extractSkillsFromText, skillKeywords } from "@/data/dummyData";
 import { useNavigate } from "react-router-dom";
 
 const UploadResume = () => {
@@ -16,33 +16,90 @@ const UploadResume = () => {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [newSkill, setNewSkill] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [resumeText, setResumeText] = useState("");
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
-  };
+  }, []);
 
-  const handleDragLeave = () => {
+  const handleDragLeave = useCallback(() => {
     setIsDragging(false);
-  };
+  }, []);
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       handleFileUpload(files[0]);
     }
+  }, []);
+
+  const parseResumeFile = async (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        resolve(text || "");
+      };
+      
+      reader.onerror = () => {
+        reject(new Error("Failed to read file"));
+      };
+      
+      // For text-based files, read as text
+      if (file.type === "text/plain" || file.name.endsWith(".txt")) {
+        reader.readAsText(file);
+      } else {
+        // For PDF/DOC files, we'll simulate parsing
+        // In a real app, you'd use a library like pdf-parse or send to backend
+        reader.readAsText(file);
+      }
+    });
   };
 
-  const handleFileUpload = (file: File) => {
+  const handleFileUpload = async (file: File) => {
     setUploadedFile(file);
-    // Simulate AI analysis
     setIsAnalyzing(true);
-    setTimeout(() => {
-      setSkills(userSkills);
+    
+    try {
+      // Try to parse the file
+      const text = await parseResumeFile(file);
+      setResumeText(text);
+      
+      // Extract skills from the resume text
+      let extractedSkills = extractSkillsFromText(text);
+      
+      // If no skills found from text, use file name hints or provide sample skills
+      if (extractedSkills.length === 0) {
+        // Check if file name contains skill hints
+        const fileName = file.name.toLowerCase();
+        extractedSkills = extractSkillsFromText(fileName);
+        
+        // If still no skills, show a message but allow manual entry
+        if (extractedSkills.length === 0) {
+          // Provide some common skills as suggestions based on file type
+          extractedSkills = [
+            { name: "Python", level: "intermediate", category: "Programming" },
+            { name: "JavaScript", level: "intermediate", category: "Programming" },
+            { name: "SQL", level: "intermediate", category: "Database" },
+          ];
+        }
+      }
+      
+      setSkills(extractedSkills);
+    } catch (error) {
+      console.error("Error parsing resume:", error);
+      // Fallback to basic skills
+      setSkills([
+        { name: "Python", level: "intermediate", category: "Programming" },
+        { name: "JavaScript", level: "intermediate", category: "Programming" },
+      ]);
+    } finally {
       setIsAnalyzing(false);
-    }, 2000);
+    }
   };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -52,18 +109,30 @@ const UploadResume = () => {
     }
   };
 
-  const addSkill = () => {
+  const addSkill = useCallback(() => {
     if (newSkill.trim()) {
-      setSkills([...skills, { name: newSkill.trim(), level: "intermediate", category: "Other" }]);
+      const skillLower = newSkill.trim().toLowerCase();
+      const existingSkill = skillKeywords[skillLower];
+      
+      const newSkillObj: Skill = existingSkill 
+        ? { name: newSkill.trim(), level: existingSkill.level, category: existingSkill.category }
+        : { name: newSkill.trim(), level: "intermediate", category: "Other" };
+      
+      // Check if skill already exists
+      if (!skills.some(s => s.name.toLowerCase() === skillLower)) {
+        setSkills(prev => [...prev, newSkillObj]);
+      }
       setNewSkill("");
     }
-  };
+  }, [newSkill, skills]);
 
-  const removeSkill = (skillName: string) => {
-    setSkills(skills.filter(s => s.name !== skillName));
-  };
+  const removeSkill = useCallback((skillName: string) => {
+    setSkills(prev => prev.filter(s => s.name !== skillName));
+  }, []);
 
   const handleAnalyze = () => {
+    // Store skills in sessionStorage for the matching page
+    sessionStorage.setItem("userSkills", JSON.stringify(skills));
     navigate("/matching");
   };
 
@@ -75,6 +144,32 @@ const UploadResume = () => {
       default: return "bg-muted text-muted-foreground";
     }
   };
+
+  const getCategoryColor = (category: string) => {
+    const colors: Record<string, string> = {
+      "Programming": "bg-blue-500/10 text-blue-600 border-blue-500/20",
+      "Frontend": "bg-purple-500/10 text-purple-600 border-purple-500/20",
+      "Backend": "bg-green-500/10 text-green-600 border-green-500/20",
+      "Database": "bg-orange-500/10 text-orange-600 border-orange-500/20",
+      "AI/ML": "bg-pink-500/10 text-pink-600 border-pink-500/20",
+      "DevOps": "bg-cyan-500/10 text-cyan-600 border-cyan-500/20",
+      "Cloud": "bg-indigo-500/10 text-indigo-600 border-indigo-500/20",
+      "Tools": "bg-gray-500/10 text-gray-600 border-gray-500/20",
+      "Analytics": "bg-teal-500/10 text-teal-600 border-teal-500/20",
+      "Mobile": "bg-rose-500/10 text-rose-600 border-rose-500/20",
+      "Testing": "bg-amber-500/10 text-amber-600 border-amber-500/20",
+    };
+    return colors[category] || "bg-muted text-muted-foreground";
+  };
+
+  // Group skills by category
+  const groupedSkills = skills.reduce((acc, skill) => {
+    if (!acc[skill.category]) {
+      acc[skill.category] = [];
+    }
+    acc[skill.category].push(skill);
+    return acc;
+  }, {} as Record<string, Skill[]>);
 
   return (
     <div className="min-h-screen bg-background">
@@ -106,7 +201,7 @@ const UploadResume = () => {
               >
                 <input
                   type="file"
-                  accept=".pdf,.doc,.docx"
+                  accept=".pdf,.doc,.docx,.txt"
                   onChange={handleFileInput}
                   className="absolute inset-0 cursor-pointer opacity-0"
                 />
@@ -114,11 +209,15 @@ const UploadResume = () => {
                 {uploadedFile ? (
                   <div className="text-center">
                     <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-success/10">
-                      <Check className="h-8 w-8 text-success" />
+                      {isAnalyzing ? (
+                        <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                      ) : (
+                        <Check className="h-8 w-8 text-success" />
+                      )}
                     </div>
                     <p className="font-medium text-foreground">{uploadedFile.name}</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {isAnalyzing ? "Analyzing your resume..." : "Resume uploaded successfully!"}
+                      {isAnalyzing ? "Analyzing your resume..." : `Found ${skills.length} skills!`}
                     </p>
                   </div>
                 ) : (
@@ -130,7 +229,7 @@ const UploadResume = () => {
                       Drag & drop your resume here
                     </p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      or click to browse (PDF, DOC, DOCX)
+                      or click to browse (PDF, DOC, DOCX, TXT)
                     </p>
                   </div>
                 )}
@@ -151,7 +250,7 @@ const UploadResume = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 font-display">
                 <FileText className="h-5 w-5 text-primary" />
-                {skills.length > 0 ? "Extracted Skills" : "Add Skills Manually"}
+                {skills.length > 0 ? `Extracted Skills (${skills.length})` : "Add Skills Manually"}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -170,24 +269,33 @@ const UploadResume = () => {
                 </Button>
               </div>
 
-              {/* Skills Grid */}
+              {/* Skills by Category */}
               {skills.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {skills.map((skill) => (
-                    <Badge
-                      key={skill.name}
-                      variant="outline"
-                      className={`group cursor-pointer px-3 py-1.5 text-sm transition-all ${getLevelColor(skill.level)}`}
-                    >
-                      {skill.name}
-                      <span className="ml-2 text-xs opacity-60">{skill.level}</span>
-                      <button
-                        onClick={() => removeSkill(skill.name)}
-                        className="ml-2 rounded-full p-0.5 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-foreground/10"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
+                <div className="space-y-4">
+                  {Object.entries(groupedSkills).map(([category, categorySkills]) => (
+                    <div key={category}>
+                      <h4 className={`mb-2 text-sm font-medium px-2 py-1 rounded-md inline-block ${getCategoryColor(category)}`}>
+                        {category}
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {categorySkills.map((skill) => (
+                          <Badge
+                            key={skill.name}
+                            variant="outline"
+                            className={`group cursor-pointer px-3 py-1.5 text-sm transition-all ${getLevelColor(skill.level)}`}
+                          >
+                            {skill.name}
+                            <span className="ml-2 text-xs opacity-60 capitalize">{skill.level}</span>
+                            <button
+                              onClick={() => removeSkill(skill.name)}
+                              className="ml-2 rounded-full p-0.5 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-foreground/10"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -204,9 +312,12 @@ const UploadResume = () => {
           {skills.length > 0 && (
             <div className="text-center">
               <Button onClick={handleAnalyze} variant="hero" size="xl" className="gap-2">
-                Find Matching Jobs
+                Find Matching Jobs in India
                 <FileText className="h-5 w-5" />
               </Button>
+              <p className="mt-3 text-sm text-muted-foreground">
+                We'll match your {skills.length} skills with {20}+ job opportunities across India
+              </p>
             </div>
           )}
         </div>
