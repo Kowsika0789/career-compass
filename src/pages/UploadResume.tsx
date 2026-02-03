@@ -8,6 +8,10 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Skill, extractSkillsFromText, skillKeywords } from "@/data/dummyData";
 import { useNavigate } from "react-router-dom";
+import * as pdfjsLib from "pdfjs-dist";
+
+// Set the worker source for PDF.js
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 const UploadResume = () => {
   const navigate = useNavigate();
@@ -36,7 +40,31 @@ const UploadResume = () => {
     }
   }, []);
 
+  const extractTextFromPDF = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    
+    let fullText = "";
+    
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(" ");
+      fullText += pageText + "\n";
+    }
+    
+    return fullText;
+  };
+
   const parseResumeFile = async (file: File): Promise<string> => {
+    // Handle PDF files
+    if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+      return await extractTextFromPDF(file);
+    }
+    
+    // Handle text files
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       
@@ -49,14 +77,7 @@ const UploadResume = () => {
         reject(new Error("Failed to read file"));
       };
       
-      // For text-based files, read as text
-      if (file.type === "text/plain" || file.name.endsWith(".txt")) {
-        reader.readAsText(file);
-      } else {
-        // For PDF/DOC files, we'll simulate parsing
-        // In a real app, you'd use a library like pdf-parse or send to backend
-        reader.readAsText(file);
-      }
+      reader.readAsText(file);
     });
   };
 
